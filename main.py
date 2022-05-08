@@ -62,11 +62,9 @@ def prep_data(datain, time_step):
 
 ##### Step 1 - Select data for modeling and apply MinMax scaling
 X = combi[['POWER']]
-scaler = MinMaxScaler()
-X_scaled = scaler.fit_transform(X)
 
 ##### Step 2 - Create training and testing samples
-train_data, test_data = train_test_split(X_scaled, test_size=0.1, shuffle=False)
+train_data, test_data = train_test_split(X.values, test_size=0.1, shuffle=False)
 
 ##### Step 3 - Prepare input X and target y arrays using previously defined function
 time_step = 4
@@ -87,7 +85,7 @@ ann_model.add(Dense(units=3, activation='relu', name='Hidden-Layer1'))
 ann_model.add(Dense(units=2, activation='relu', name='Hidden-Layer2'))
 ann_model.add(Dense(units=1, activation='sigmoid', name='Output-Layer'))
 
-##### Step 5 - Compile keras model
+##### Step 5.1 - Compile keras model
 model.compile(optimizer='adam',
               loss='mean_squared_error',
               metrics=['MeanSquaredError', 'MeanAbsoluteError', tf.keras.metrics.RootMeanSquaredError()],
@@ -97,6 +95,15 @@ model.compile(optimizer='adam',
               steps_per_execution=None
               )
 
+##### Step 5.2 - Compile keras model
+ann_model.compile(optimizer='adam',
+                  loss='mean_squared_error',
+                  metrics=['MeanSquaredError', 'MeanAbsoluteError', tf.keras.metrics.RootMeanSquaredError()],
+                  loss_weights=None,
+                  weighted_metrics=None,
+                  run_eagerly=None,
+                  steps_per_execution=None
+                  )
 
 ##### Step 6 - Fit keras model on the dataset
 model.fit(X_train,  # input data
@@ -120,7 +127,27 @@ model.fit(X_train,  # input data
           use_multiprocessing=False,
           )
 
-
+##### Step 6 - Fit keras model on the dataset
+ann_model.fit(X_train,  # input data
+              y_train,  # target data
+              batch_size=32,  # Number of samples per gradient update. If unspecified, batch_size will default to 32.
+              epochs=20,
+              verbose='auto',
+              callbacks=None,
+              validation_split=0.2,
+              validation_data=(X_test, y_test),
+              shuffle=True,
+              class_weight=None,
+              sample_weight=None,
+              initial_epoch=0,
+              steps_per_epoch=None,
+              validation_steps=None,
+              validation_batch_size=None,
+              validation_freq=2,
+              max_queue_size=10,
+              workers=1,
+              use_multiprocessing=False,
+              )
 
 ##### Step 8 - Model Performance Summary
 print("")
@@ -128,12 +155,10 @@ print('-------------------- Model Summary --------------------')
 model.summary()  # print model summary
 print("")
 
-
 # With the current setup, we feed in 7 days worth of data and get the prediction for the next day
 # We want to create an array that contains 7-day chunks offset by one day at a time
 # This is so we can make a prediction for every day in the data instead of every 7th day
-X_every = combi[['POWER']]
-X_every = scaler.transform(X_every)
+X_every = combi[['POWER']].values
 
 for i in range(0, len(X_every) - time_step):
     if i == 0:
@@ -145,8 +170,9 @@ print(X_comb.shape)
 
 # Use the reshaped data to make predictions and add back into the dataframe
 # np.zeros(time_step) - Set the first 7 numbers to 0 as we do not have data to predict
-print(len(combi[['POWER']]), time_step + len(scaler.inverse_transform(model.predict(X_comb))))
-combi['POWER_RNN_PRED'] = np.append(np.zeros(time_step), scaler.inverse_transform(model.predict(X_comb)))
+print(len(combi[['POWER']]), time_step + len(model.predict(X_comb)))
+combi['POWER_RNN_PRED'] = np.append(np.zeros(time_step), model.predict(X_comb))
+combi['POWER_ANN_PRED'] = np.append(np.zeros(time_step), model.predict(X_comb))
 
 combi.to_csv('ForecastTemplate3-RNN.csv', encoding='utf-8', index=False)
 
@@ -165,6 +191,13 @@ fig.add_trace(go.Scatter(x=combi['TIMESTAMP'],
                          opacity=0.8,
                          line=dict(color='red', width=1)
                          ))
+fig.add_trace(go.Scatter(x=combi['TIMESTAMP'],
+                         y=combi['POWER_ANN_PRED'],
+                         mode='lines',
+                         name='POWER - ANN Predicted',
+                         opacity=0.8,
+                         line=dict(color='purple', width=1)
+                         ))
 
 # Change chart background color
 fig.update_layout(dict(plot_bgcolor='white'))
@@ -179,7 +212,7 @@ fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='lightgrey',
 fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='lightgrey',
                  zeroline=True, zerolinewidth=1, zerolinecolor='lightgrey',
                  showline=True, linewidth=1, linecolor='black',
-                 title='POWER'
+                 title='POWER(NORMALISED)'
                  )
 
 # Set figure title
