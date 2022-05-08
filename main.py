@@ -31,7 +31,7 @@ pd.options.display.max_columns = 50
 
 # Read in the power data csv, only keep specified columns
 df = pd.read_csv('TrainData.csv', encoding='utf-8')
-nov = pd.read_csv('WeatherForecastInput.csv', encoding='utf-8')
+nov = pd.read_csv('Solution.csv', encoding='utf-8')
 combi = df.merge(nov, how='outer').fillna(0)[['TIMESTAMP', 'POWER']]
 
 combi[['DATETIME', 'HOURSTRING']] = combi.TIMESTAMP.str.split(" ", expand=True)
