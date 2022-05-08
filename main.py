@@ -30,14 +30,15 @@ import seaborn as sns
 pd.options.display.max_columns = 50
 
 # Read in the power data csv, only keep specified columns
-df = pd.read_csv('TrainData.csv', encoding='utf-8')[['TIMESTAMP', 'POWER']]
+df = pd.read_csv('TrainData.csv', encoding='utf-8')
 nov = pd.read_csv('WeatherForecastInput.csv', encoding='utf-8')
-combi = pd.concat([df, nov], axis=1)
+combi = df.merge(nov, how='outer').fillna(0)[['TIMESTAMP', 'POWER']]
 
-df[['DATETIME', 'HOURSTRING']] = df.TIMESTAMP.str.split(" ", expand=True)
-df[['HOUR', 'MINUTE']] = df.HOURSTRING.str.split(":", expand=True)
+combi[['DATETIME', 'HOURSTRING']] = combi.TIMESTAMP.str.split(" ", expand=True)
+combi[['HOUR', 'MINUTE']] = combi.HOURSTRING.str.split(":", expand=True)
 # Show a snaphsot of data
 print(df)
+print(combi)
 
 
 ##### Step 0 - We will use this function in step 3 to get the data into the right shape
@@ -60,7 +61,7 @@ def prep_data(datain, time_step):
 
 
 ##### Step 1 - Select data for modeling and apply MinMax scaling
-X = df[['POWER']]
+X = combi[['POWER']]
 scaler = MinMaxScaler()
 X_scaled = scaler.fit_transform(X)
 
@@ -96,19 +97,12 @@ model.compile(optimizer='adam',
               steps_per_execution=None
               )
 
-ann_model.compile(optimizer='adam',
-                  loss='mean_squared_error',
-                  metrics=['MeanSquaredError', 'MeanAbsoluteError', tf.keras.metrics.RootMeanSquaredError()],
-                  loss_weights=None,
-                  weighted_metrics=None,
-                  run_eagerly=None,
-                  steps_per_execution=None)
 
 ##### Step 6 - Fit keras model on the dataset
 model.fit(X_train,  # input data
           y_train,  # target data
-          batch_size=1,  # Number of samples per gradient update. If unspecified, batch_size will default to 32.
-          epochs=10,
+          batch_size=32,  # Number of samples per gradient update. If unspecified, batch_size will default to 32.
+          epochs=20,
           verbose='auto',
           callbacks=None,
           validation_split=0.2,
@@ -126,26 +120,7 @@ model.fit(X_train,  # input data
           use_multiprocessing=False,
           )
 
-ann_model.fit(X_train,  # input data
-              y_train,  # target data
-              batch_size=1,  # Number of samples per gradient update. If unspecified, batch_size will default to 32.
-              epochs=10,
-              verbose='auto',
-              callbacks=None,
-              validation_split=0.2,
-              validation_data=(X_test, y_test),
-              shuffle=True,
-              class_weight=None,
-              sample_weight=None,
-              initial_epoch=0,
-              steps_per_epoch=None,
-              validation_steps=None,
-              validation_batch_size=None,
-              validation_freq=2,
-              max_queue_size=10,
-              workers=1,
-              use_multiprocessing=False,
-              )
+
 
 ##### Step 8 - Model Performance Summary
 print("")
@@ -153,14 +128,11 @@ print('-------------------- Model Summary --------------------')
 model.summary()  # print model summary
 print("")
 
-print('-------------------- Model2 Summary --------------------')
-ann_model.summary()  # print model summary
-print("")
 
 # With the current setup, we feed in 7 days worth of data and get the prediction for the next day
 # We want to create an array that contains 7-day chunks offset by one day at a time
 # This is so we can make a prediction for every day in the data instead of every 7th day
-X_every = df[['POWER']]
+X_every = combi[['POWER']]
 X_every = scaler.transform(X_every)
 
 for i in range(0, len(X_every) - time_step):
@@ -173,23 +145,21 @@ print(X_comb.shape)
 
 # Use the reshaped data to make predictions and add back into the dataframe
 # np.zeros(time_step) - Set the first 7 numbers to 0 as we do not have data to predict
+print(len(combi[['POWER']]), time_step + len(scaler.inverse_transform(model.predict(X_comb))))
+combi['POWER_RNN_PRED'] = np.append(np.zeros(time_step), scaler.inverse_transform(model.predict(X_comb)))
 
-nov_pred = []
-df[['POWER_RNN_PRED']] = np.append(np.zeros(time_step), scaler.inverse_transform(model.predict(X_comb)))
+combi.to_csv('ForecastTemplate3-RNN.csv', encoding='utf-8', index=False)
 
-df.to_csv('ForecastTemplate3-RNN.csv', encoding='utf-8', index=False)
-
-print(df)
 fig = go.Figure()
-fig.add_trace(go.Scatter(x=df['TIMESTAMP'],
-                         y=df['POWER'],
+fig.add_trace(go.Scatter(x=combi['TIMESTAMP'],
+                         y=combi['POWER'],
                          mode='lines',
                          name='POWER - Actual',
                          opacity=0.8,
                          line=dict(color='black', width=1)
                          ))
-fig.add_trace(go.Scatter(x=df['TIMESTAMP'],
-                         y=df['POWER_RNN_PRED'],
+fig.add_trace(go.Scatter(x=combi['TIMESTAMP'],
+                         y=combi['POWER_RNN_PRED'],
                          mode='lines',
                          name='POWER - RNN Predicted',
                          opacity=0.8,
